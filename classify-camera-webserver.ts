@@ -135,10 +135,13 @@ function startWebServer(model: ModelInformation, camera: ICamera, imgClassifier:
     // but then you're limited by the inference speed.
     // here we get a direct feed from the camera so we guarantee the fps that we set earlier.
 
+    let lastFrameOriginalResolution: Buffer | undefined;
     let nextFrame = Date.now();
     let processingFrame = false;
     camera.on('snapshot', async (data) => {
         if (nextFrame > Date.now() || processingFrame) return;
+
+        lastFrameOriginalResolution = data;
 
         processingFrame = true;
 
@@ -237,9 +240,13 @@ function startWebServer(model: ModelInformation, camera: ICamera, imgClassifier:
             additionalInfo: ev.info,
         });
 
-        imgToSendToOpenAI = await highlightAnomalyInImage(imgAsJpg, ev, model);
+        if (lastFrameOriginalResolution) {
+            imgToSendToOpenAI = await highlightAnomalyInImage(lastFrameOriginalResolution, ev, model);
 
-        // await sharp(imgToSendToOpenAI).toFile('tmp.png');
+            if (ev.result.visual_anomaly_grid && ev.result.visual_anomaly_grid.length > 0) {
+                await sharp(imgToSendToOpenAI).toFile('tmp.png');
+            }
+        }
 
         if ((ev.result.visual_anomaly_grid || []).length > 0 && !isRunningOpenAI) {
             anomalySeen = true;

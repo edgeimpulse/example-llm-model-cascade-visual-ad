@@ -1,5 +1,6 @@
 import sharp from 'sharp';
-import { ModelInformation, RunnerClassifyResponseSuccess } from './edge-impulse-linux/library/classifier/linux-impulse-runner';
+import { ModelInformation } from 'edge-impulse-linux';
+import { RunnerClassifyResponseSuccess } from 'edge-impulse-linux/build/library/classifier/linux-impulse-runner';
 
 export function getBoundingBoxesFromGrid(grid: number[][]): { x: number, y: number, w: number, h: number }[] {
     const visited: boolean[][] = grid.map(row => row.map(() => false));

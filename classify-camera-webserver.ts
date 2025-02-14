@@ -5,7 +5,7 @@ import http from 'http';
 import Path from 'path';
 import OpenAI from "openai";
 import { highlightAnomalyInImage } from "./helpers";
-import { Ffmpeg, ICamera, ImageClassifier, Imagesnap, LinuxImpulseRunner, ModelInformation, RunnerHelloHasAnomaly } from './edge-impulse-linux/library';
+import { Ffmpeg, ICamera, ImageClassifier, Imagesnap, LinuxImpulseRunner, ModelInformation, RunnerHelloHasAnomaly } from 'edge-impulse-linux';
 
 if (!process.env.OPENAI_API_KEY) {
     console.log('Missing OPENAI_API_KEY');
@@ -280,7 +280,7 @@ function startWebServer(model: ModelInformation, camera: ICamera, imgClassifier:
                     let v = Number(thresholdOverrideArg);
                     if (v === thresholdObj.min_anomaly_score) return;
 
-                    console.log(`Updating threshold, now: ${thresholdObj.min_anomaly_score}, setting to: ${v}...`);
+                    process.stdout.write(`Updating threshold, now: ${thresholdObj.min_anomaly_score}, setting to: ${v}... `);
 
                     await imgClassifier.getRunner().setLearnBlockThreshold({
                         id: thresholdObj.id,
@@ -290,7 +290,7 @@ function startWebServer(model: ModelInformation, camera: ICamera, imgClassifier:
 
                     thresholdObj.min_anomaly_score = Number(thresholdOverrideArg);
 
-                    console.log(`Updated threshold to ${v}`);
+                    console.log(`OK`);
                 }
             }
             catch (ex) {

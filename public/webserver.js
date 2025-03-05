@@ -21,8 +21,8 @@ window.WebServer = async () => {
         resultsTbody: document.querySelector('#results-table tbody'),
         enableCascade: document.querySelector('#enable-cascade'),
         prompt: document.querySelector('#prompt'),
-        thresholdOverride: document.querySelector('#threshold-override'),
-        noThresholdInfo: document.querySelector('#no-threshold-info'),
+        thresholdsBody: document.querySelector('#thresholds-body'),
+        historyCardBody: document.querySelector('#history-card-body .row'),
     };
 
     const colors = [
@@ -38,11 +38,134 @@ window.WebServer = async () => {
         el.style.display = '';
     }
 
+    function bindThresholdSettings(thresholds) {
+        // prevent closing on click inside the dropdown menu
+        document.querySelector('.dropdown-menu').addEventListener('click', ev => {
+            ev.stopPropagation();
+        });
+
+        els.thresholdsBody.innerHTML = '';
+
+        let h3 = document.createElement('h3');
+        h3.textContent = 'Thresholds';
+        els.thresholdsBody.appendChild(h3);
+
+        if (!thresholds) {
+            let msgEl = document.createElement('div');
+            let emEl = document.createElement('em');
+            emEl.classList.add('text-sm');
+            emEl.textContent = 'Model does not support setting thresholds. Re-build the eim file to change the thresholds.';
+            msgEl.appendChild(emEl);
+            els.thresholdsBody.appendChild(msgEl);
+            return;
+        }
+
+        if (thresholds.length === 0) {
+            let msgEl = document.createElement('div');
+            let emEl = document.createElement('em');
+            emEl.classList.add('text-sm');
+            emEl.textContent = 'Model does not have any settable thresholds.';
+            msgEl.appendChild(emEl);
+            els.thresholdsBody.appendChild(msgEl);
+            return;
+        }
+
+        let thresholdsDiv = document.createElement('div');
+        thresholdsDiv.classList.add('mb--3');
+
+        for (let threshold of thresholds) {
+
+            for (let k of Object.keys(threshold)) {
+                if (k === 'id' || k === 'type') continue;
+                if (typeof threshold[k] !== 'number' && typeof threshold[k] !== 'boolean') continue;
+
+                const LS_KEY = `threshold-${threshold.id}-${k}`;
+
+                let rowEl = document.createElement('div');
+                rowEl.classList.add('mb-3');
+
+                let labelEl = document.createElement('label');
+                labelEl.classList.add('form-control-label', 'w-100');
+                labelEl.textContent = `${threshold.type}: ${k} (block ID: ${threshold.id})`;
+                rowEl.appendChild(labelEl);
+
+                const valueFromLs = localStorage.getItem(LS_KEY);
+
+                let inputEl = document.createElement('input');
+
+                if (typeof threshold[k] === 'number') {
+                    if (valueFromLs && !isNaN(Number(valueFromLs))) {
+                        threshold[k] = Number(valueFromLs);
+                        socket.emit('threshold-override', {
+                            id: threshold.id,
+                            key: k,
+                            value: threshold[k],
+                        });
+                    }
+
+                    inputEl.classList.add('form-control', 'form-control-sm', 'text-default', 'font-monospace');
+                    let rounded = Math.round(threshold[k] * 1000) / 1000;
+                    inputEl.value = rounded;
+                    rowEl.appendChild(inputEl);
+                }
+                else if (typeof threshold[k] === 'boolean') {
+                    if (valueFromLs === 'true' || valueFromLs === 'false') {
+                        threshold[k] = valueFromLs === 'true';
+                        socket.emit('threshold-override', {
+                            id: threshold.id,
+                            key: k,
+                            value: threshold[k],
+                        });
+                    }
+
+                    let cbWrapperEl = document.createElement('div');
+                    cbWrapperEl.classList.add('custom-control', 'custom-control-alternative', 'custom-checkbox');
+
+                    inputEl.classList.add('custom-control-input');
+                    inputEl.type = 'checkbox';
+                    inputEl.autocomplete = 'off';
+                    inputEl.checked = threshold[k] ? true : false;
+                    inputEl.id = `cb-${threshold.id}-${k}`;
+
+                    let cbLabelEl = document.createElement('label');
+                    cbLabelEl.classList.add('custom-control-label', 'pl-2');
+                    cbLabelEl.setAttribute('for', inputEl.id);
+                    cbLabelEl.textContent = '\xa0'; // &nbsp;
+
+                    cbWrapperEl.appendChild(inputEl);
+                    cbWrapperEl.appendChild(cbLabelEl);
+
+                    rowEl.appendChild(cbWrapperEl);
+                }
+
+                thresholdsDiv.appendChild(rowEl);
+
+                inputEl.oninput = () => {
+                    if (typeof threshold[k] === 'number') {
+                        if (!inputEl.value || isNaN(Number(inputEl.value))) return;
+
+                        threshold[k] = Number(inputEl.value);
+                    }
+                    else if (typeof threshold[k] === 'boolean') {
+                        threshold[k] = inputEl.checked;
+                    }
+
+                    socket.emit('threshold-override', {
+                        id: threshold.id,
+                        key: k,
+                        value: threshold[k],
+                    });
+
+                    localStorage.setItem(LS_KEY, threshold[k]);
+                };
+            }
+        }
+
+        els.thresholdsBody.appendChild(thresholdsDiv);
+    }
+
     if (localStorage.getItem('prompt')) {
         els.prompt.value = localStorage.getItem('prompt');
-    }
-    if (localStorage.getItem('threshold-override')) {
-        els.thresholdOverride.value = localStorage.getItem('threshold-override');
     }
 
     // Here is how we connect back to the server
@@ -58,7 +181,6 @@ window.WebServer = async () => {
         }
 
         socket.emit('prompt', els.prompt.value);
-        socket.emit('threshold-override', els.thresholdOverride.value);
     });
 
     els.enableCascade.oninput = () => {
@@ -83,37 +205,13 @@ window.WebServer = async () => {
         socket.emit('prompt', els.prompt.value);
     };
 
-    els.thresholdOverride.onchange = () => {
-        if (isNaN(Number(els.thresholdOverride.value))) {
-            els.thresholdOverride.classList.add('is-invalid');
-            return;
-        }
-        else {
-            els.thresholdOverride.classList.remove('is-invalid');
-        }
-
-        localStorage.setItem('threshold-override', els.thresholdOverride.value);
-        socket.emit('threshold-override', els.thresholdOverride.value);
-    };
-
     socket.on('hello', (opts) => {
         console.log('hello', opts);
 
         els.title.textContent = 'Model cascade demo';
 
-        if (!opts.canSetThreshold) {
-            els.thresholdOverride.value = '';
-            els.thresholdOverride.disabled = true;
-            els.noThresholdInfo.style.display = '';
-        }
-        else {
-            if (!els.thresholdOverride.value && typeof opts.defaultThreshold === 'number') {
-                els.thresholdOverride.value = Math.round((opts.defaultThreshold * 100) / 100).toString();
-            }
-            els.noThresholdInfo.style.display = 'none';
-        }
-
         switchView(els.views.captureCamera);
+        bindThresholdSettings(opts.thresholds);
     });
 
     socket.on('image', (opts) => {
@@ -125,7 +223,7 @@ window.WebServer = async () => {
 
         let tr = document.createElement('tr');
         let th = document.createElement('th');
-        th.textContent = new Date().toLocaleTimeString().split(' ')[0];
+        th.textContent = new Date().toLocaleTimeString('nl-NL').split(' ')[0];
         let td = document.createElement('td');
         td.textContent = ev.message;
         tr.appendChild(th);
@@ -145,12 +243,66 @@ window.WebServer = async () => {
         }
     });
 
+    socket.on('prediction-begin', ev => {
+        console.log('prediction-begin', ev);
+
+        const noPredictionsYet = document.querySelector('#no-predictions-yet');
+        if (noPredictionsYet) {
+            noPredictionsYet.parentNode.removeChild(noPredictionsYet);
+        }
+
+        const wrapperEl = document.createElement('div');
+        wrapperEl.id = 'prediction-' + ev.id;
+        wrapperEl.classList.add('col-prediction', 'col-auto');
+
+        const imgEl = document.createElement('img');
+        imgEl.src = ev.image;
+
+        const timeEl = document.createElement('div');
+        timeEl.classList.add('history-card-time');
+        timeEl.textContent = new Date(ev.timestamp).toLocaleTimeString('nl-NL').split(' ')[0];
+
+        const descriptionEl = document.createElement('div');
+        descriptionEl.classList.add('history-card-description');
+
+        const spinnerEl = document.createElement('i');
+        spinnerEl.classList.add('fas', 'fa-spinner', 'spin-animation', 'mr-2');
+
+        const descriptionSpan = document.createElement('span');
+        descriptionSpan.classList.add('text-gray')
+        descriptionSpan.textContent = 'Asking the LLM...';
+
+        descriptionEl.appendChild(spinnerEl);
+        descriptionEl.appendChild(descriptionSpan);
+
+        wrapperEl.appendChild(imgEl);
+        wrapperEl.appendChild(timeEl);
+        wrapperEl.appendChild(descriptionEl);
+
+        els.historyCardBody.insertBefore(wrapperEl, els.historyCardBody.firstChild);
+    });
+
+    socket.on('prediction-done', ev => {
+        console.log('prediction-done', ev);
+
+        const wrapperEl = document.querySelector(`#prediction-${ev.id}`);
+        if (!wrapperEl) return;
+
+        const descriptionEl = wrapperEl.querySelector(`.history-card-description`);
+        descriptionEl.title = descriptionEl.textContent = ev.response;
+
+        let timeElapsedEl = document.createElement('div');
+        timeElapsedEl.classList.add('text-gray', 'mt-1', 'text-xs');
+        timeElapsedEl.textContent = `LLM inference took ${ev.timeMs.toLocaleString()}ms.`;
+        wrapperEl.appendChild(timeElapsedEl);
+    });
+
     (() => {
         els.resultsTable.style.display = '';
 
         let tr = document.createElement('tr');
         let th = document.createElement('th');
-        th.textContent = new Date().toLocaleTimeString().split(' ')[0];
+        th.textContent = new Date().toLocaleTimeString('nl-NL').split(' ')[0];
         let td = document.createElement('td');
         td.textContent = 'Connected';
         tr.appendChild(th);

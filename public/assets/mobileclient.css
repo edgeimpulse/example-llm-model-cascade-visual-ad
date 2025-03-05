@@ -4177,3 +4177,44 @@ video {
 #preview-image-container {
     position: relative;
 }
+
+#thresholds-body {
+    min-width: 500px;
+    padding: 1rem;
+    margin-bottom: -1rem;
+}
+
+#history-card-body {
+    margin-left: 0.5rem;
+    margin-right: 0.5rem;
+}
+
+#history-card-body .row {
+    margin-bottom: -1rem;
+}
+
+#history-card-body .col-prediction {
+    width: 200px;
+    margin-bottom: 1rem;
+    display: inline-block;
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+}
+
+#history-card-body img {
+    width: 100%;
+    display: inline-block;
+    margin-bottom: 0.5rem;
+}
+#history-card-body .history-card-time {
+    font-size: 0.875rem;
+    font-weight: 600;
+    margin-bottom: 0.1rem;
+}
+#history-card-body .history-card-description {
+    font-size: 0.875rem;
+}
+#no-predictions-yet {
+    margin-bottom: 1rem;
+    margin-left: 0.5rem;
+}

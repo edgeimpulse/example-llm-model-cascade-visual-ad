@@ -170,7 +170,9 @@ function startWebServer(model: ModelInformation, camera: ICamera, imgClassifier:
     let isRunningOpenAI = false;
 
     let imgToSendToOpenAI: Buffer = Buffer.from([ ]);
+    let imgToSendToOpenAICollected = new Date();
     let anomalySeen = false;
+    let predictionCounter = 0;
 
     (async () => {
         const sleep = (ms: number) => new Promise<void>(res => setTimeout(res, ms));
@@ -186,6 +188,18 @@ function startWebServer(model: ModelInformation, camera: ICamera, imgClassifier:
             if (!anomalySeen) continue;
 
             try {
+                let imgForOpenAI = imgToSendToOpenAI;
+                let imgForOpenAICollected = imgToSendToOpenAICollected;
+
+                let predictionIx = predictionCounter++;
+                let now = Date.now();
+
+                io.emit('prediction-begin', {
+                    id: predictionIx,
+                    image: 'data:image/jpeg;base64,' + (imgForOpenAI.toString('base64')),
+                    timestamp: imgForOpenAICollected.toISOString(),
+                });
+
                 console.log('Anomaly detected, asking GPT-4o...');
                 io.emit('anomaly', {
                     message: 'Anomaly detected, asking GPT-4o...',
@@ -201,7 +215,7 @@ function startWebServer(model: ModelInformation, camera: ICamera, imgClassifier:
                         }, {
                             type: 'image_url',
                             image_url: {
-                                url: 'data:image/jpeg;base64,' + (imgToSendToOpenAI.toString('base64')),
+                                url: 'data:image/jpeg;base64,' + (imgForOpenAI.toString('base64')),
                                 detail: 'auto'
                             }
                         }]
@@ -224,6 +238,11 @@ function startWebServer(model: ModelInformation, camera: ICamera, imgClassifier:
                 io.emit('anomaly', {
                     message: 'Response: ' + resp.choices[0].message.content,
                 });
+                io.emit('prediction-done', {
+                    id: predictionIx,
+                    response: resp.choices[0].message.content,
+                    timeMs: Date.now() - now,
+                });
             }
             catch (ex) {
                 console.log('OpenAI failed:', ex);
@@ -241,6 +260,7 @@ function startWebServer(model: ModelInformation, camera: ICamera, imgClassifier:
         });
 
         if (lastFrameOriginalResolution) {
+            imgToSendToOpenAICollected = new Date();
             imgToSendToOpenAI = await highlightAnomalyInImage(lastFrameOriginalResolution, ev, model);
 
             if (ev.result.visual_anomaly_grid && ev.result.visual_anomaly_grid.length > 0) {
@@ -259,8 +279,7 @@ function startWebServer(model: ModelInformation, camera: ICamera, imgClassifier:
     io.on('connection', socket => {
         socket.emit('hello', {
             projectName: model.project.owner + ' / ' + model.project.name,
-            canSetThreshold: !!thresholdObj,
-            defaultThreshold: thresholdObj?.min_anomaly_score,
+            thresholds: model.modelParameters.thresholds,
         });
 
         socket.on('cascade-enable', () => {
@@ -274,24 +293,32 @@ function startWebServer(model: ModelInformation, camera: ICamera, imgClassifier:
             prompt = promptArg;
         });
 
-        socket.on('threshold-override', async (thresholdOverrideArg: string) => {
+        socket.on('threshold-override', async (ev: {
+            id: number,
+            key: string,
+            value: number,
+        }) => {
             try {
-                if (thresholdOverrideArg && !isNaN(Number(thresholdOverrideArg)) && thresholdObj) {
-                    let v = Number(thresholdOverrideArg);
-                    if (v === thresholdObj.min_anomaly_score) return;
+                process.stdout.write(`Updating threshold for block ID ${ev.id}, key ${ev.key} to: ${ev.value}... `);
 
-                    process.stdout.write(`Updating threshold, now: ${thresholdObj.min_anomaly_score}, setting to: ${v}... `);
-
-                    await imgClassifier.getRunner().setLearnBlockThreshold({
-                        id: thresholdObj.id,
-                        type: 'anomaly_gmm',
-                        min_anomaly_score: Number(thresholdOverrideArg),
-                    });
-
-                    thresholdObj.min_anomaly_score = Number(thresholdOverrideArg);
-
-                    console.log(`OK`);
+                let thresholdObj = (model.modelParameters.thresholds || []).find(x => x.id === ev.id);
+                if (!thresholdObj) {
+                    throw new Error(`Cannot find threshold with ID ` + ev.id);
                 }
+
+                let obj: { [k: string]: string | number } = {
+                    id: ev.id,
+                };
+                obj.type = thresholdObj.type;
+                obj[ev.key] = ev.value;
+
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+                await imgClassifier.getRunner().setLearnBlockThreshold(<any>obj);
+
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+                (<any>thresholdObj)[ev.key] = ev.value;
+
+                console.log(`OK`);
             }
             catch (ex) {
                 console.log('Failed to set threshold:', ex);

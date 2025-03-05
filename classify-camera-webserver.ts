@@ -51,9 +51,11 @@ Reply with a very short response.`;
         let model = await runner.init();
 
         let labels = model.modelParameters.labels;
-        if (model.modelParameters.has_anomaly === RunnerHelloHasAnomaly.VisualGMM) {
-            labels.push('anomaly');
+        if (model.modelParameters.has_anomaly !== RunnerHelloHasAnomaly.VisualGMM) {
+            console.log('ERR: This repository expects a visual anomaly detection model');
+            process.exit(1);
         }
+        labels.push('anomaly');
 
         console.log('Starting the image classifier for',
             model.project.owner + ' / ' + model.project.name, '(v' + model.project.deploy_version + ')');

@@ -16,6 +16,7 @@
     "@types/socket.io": "2.1.4",
     "edge-impulse-linux": "1.14.2",
     "express": "4.17.3",
+    "looks-same": "9.0.1",
     "openai": "4.53.2",
     "socket.io": "2.5.1"
   }

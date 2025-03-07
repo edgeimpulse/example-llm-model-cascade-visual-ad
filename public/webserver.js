@@ -21,6 +21,7 @@ window.WebServer = async () => {
         resultsTbody: document.querySelector('#results-table tbody'),
         enableCascade: document.querySelector('#enable-cascade'),
         prompt: document.querySelector('#prompt'),
+        minDiffBetweenAnomalies: document.querySelector('#min-diff-between-anomalies'),
         thresholdsBody: document.querySelector('#thresholds-body'),
         historyCardBody: document.querySelector('#history-card-body .row'),
     };
@@ -168,6 +169,10 @@ window.WebServer = async () => {
         els.prompt.value = localStorage.getItem('prompt');
     }
 
+    if (localStorage.getItem('min-diff-between-anomalies')) {
+        els.minDiffBetweenAnomalies.value = localStorage.getItem('min-diff-between-anomalies');
+    }
+
     // Here is how we connect back to the server
     const socket = io.connect(location.origin);
     socket.on('connect', () => {
@@ -181,6 +186,7 @@ window.WebServer = async () => {
         }
 
         socket.emit('prompt', els.prompt.value);
+        socket.emit('min-diff-between-anomalies', Number(els.minDiffBetweenAnomalies.value));
     });
 
     els.enableCascade.oninput = () => {
@@ -203,6 +209,21 @@ window.WebServer = async () => {
 
         localStorage.setItem('prompt', els.prompt.value);
         socket.emit('prompt', els.prompt.value);
+    };
+
+    els.minDiffBetweenAnomalies.onchange = () => {
+        const val = els.minDiffBetweenAnomalies.value ? Number(els.minDiffBetweenAnomalies.value) : NaN;
+
+        if (isNaN(val) || val < 0) {
+            els.minDiffBetweenAnomalies.classList.add('is-invalid');
+            return;
+        }
+        else {
+            els.minDiffBetweenAnomalies.classList.remove('is-invalid');
+        }
+
+        localStorage.setItem('min-diff-between-anomalies', val.toString());
+        socket.emit('min-diff-between-anomalies', val);
     };
 
     socket.on('hello', (opts) => {

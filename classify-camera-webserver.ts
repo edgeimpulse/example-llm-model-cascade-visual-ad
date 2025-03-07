@@ -7,6 +7,7 @@ import OpenAI from "openai";
 import { highlightAnomalyInImage } from "./helpers";
 import { Ffmpeg, ICamera, ImageClassifier, Imagesnap, LinuxImpulseRunner, ModelInformation, RunnerHelloHasAnomaly } from 'edge-impulse-linux';
 import { ips } from './get-ips';
+import looksSame from 'looks-same';
 
 if (!process.env.OPENAI_API_KEY) {
     console.log('Missing OPENAI_API_KEY');
@@ -25,14 +26,14 @@ Reply with a very short response.`;
         //   arg 2: Path to the model file. e.g. /tmp/model.eim
         //   arg 3: Name of the camera device, see output of `gst-device-monitor-1.0`. e.g. "HD Pro Webcam C920"
         // Optional arguments:
-        //   arg 4: desired FPS. e.g. 20, default 5
+        //   arg 4: desired FPS. e.g. 20, default 30
         //   arg 5: desired capture width. e.g. 320, default 640
         //   arg 6: desired capture height. e.g. 200, default 480
         //   arg 7: webserver port. e.g. 4999, default 4912
 
         const argModelFile = process.argv[2];
         const argCamDevice = process.argv[3];
-        const fps = process.argv[4] ? Number(process.argv[4]) : 5;
+        const fps = process.argv[4] ? Number(process.argv[4]) : 30;
         const dimensions = (process.argv[5] && process.argv[6]) ? {
             width: Number(process.argv[5]),
             height: Number(process.argv[6])
@@ -131,18 +132,16 @@ function startWebServer(model: ModelInformation, camera: ICamera, imgClassifier:
 
     let cascadeEnabled = false;
     let prompt = BASE_PROMPT;
-    let thresholdObj = <{ id: number, min_anomaly_score: number } | undefined>
-        (model.modelParameters.thresholds || []).find(x => x.type === 'anomaly_gmm');
+    let minDiffBetweenAnomalies = 40;
 
     // you can also get the actual image being classified from 'imageClassifier.on("result")',
     // but then you're limited by the inference speed.
     // here we get a direct feed from the camera so we guarantee the fps that we set earlier.
 
     let lastFrameOriginalResolution: Buffer | undefined;
-    let nextFrame = Date.now();
     let processingFrame = false;
     camera.on('snapshot', async (data) => {
-        if (nextFrame > Date.now() || processingFrame) return;
+        if (processingFrame) return;
 
         lastFrameOriginalResolution = data;
 
@@ -166,7 +165,6 @@ function startWebServer(model: ModelInformation, camera: ICamera, imgClassifier:
             img: 'data:image/jpeg;base64,' + (await img.jpeg().toBuffer()).toString('base64')
         });
 
-        nextFrame = Date.now() + 50;
         processingFrame = false;
     });
 
@@ -174,6 +172,7 @@ function startWebServer(model: ModelInformation, camera: ICamera, imgClassifier:
 
     let imgToSendToOpenAI: Buffer = Buffer.from([ ]);
     let imgToSendToOpenAICollected = new Date();
+    let lastImgSentToOpenAI: Buffer | undefined;
     let anomalySeen = false;
     let predictionCounter = 0;
 
@@ -186,13 +185,26 @@ function startWebServer(model: ModelInformation, camera: ICamera, imgClassifier:
             if (!cascadeEnabled) continue;
             if (!prompt) continue;
 
-            // wait 500ms. to go into focus
-            await sleep(500);
-            if (!anomalySeen) continue;
-
             try {
                 let imgForOpenAI = imgToSendToOpenAI;
                 let imgForOpenAICollected = imgToSendToOpenAICollected;
+
+                if (lastImgSentToOpenAI) {
+                    if ((await looksSame(lastImgSentToOpenAI, imgForOpenAI, {
+                        tolerance: minDiffBetweenAnomalies,
+                        antialiasingTolerance: minDiffBetweenAnomalies,
+                        strict: false,
+                    })).equal) {
+                        console.log('Anomaly detected, but image is too similar to last analyzed anomaly');
+                        io.emit('anomaly', {
+                            message: 'Anomaly detected, but image is too similar to last analyzed anomaly',
+                        });
+                        anomalySeen = false;
+                        continue;
+                    }
+                }
+
+                lastImgSentToOpenAI = imgForOpenAI;
 
                 let predictionIx = predictionCounter++;
                 let now = Date.now();
@@ -293,7 +305,15 @@ function startWebServer(model: ModelInformation, camera: ICamera, imgClassifier:
         });
 
         socket.on('prompt', (promptArg: string) => {
+            console.log('Prompt is now:', promptArg);
             prompt = promptArg;
+        });
+
+        socket.on('min-diff-between-anomalies', (minDiffBetweenAnomaliesArg: number) => {
+            if (!isNaN(minDiffBetweenAnomaliesArg) && minDiffBetweenAnomaliesArg >= 0) {
+                console.log('Min. diff between anomalies is now:', minDiffBetweenAnomaliesArg);
+                minDiffBetweenAnomalies = minDiffBetweenAnomaliesArg;
+            }
         });
 
         socket.on('threshold-override', async (ev: {

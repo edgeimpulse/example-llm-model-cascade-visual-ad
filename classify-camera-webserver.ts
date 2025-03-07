@@ -6,6 +6,7 @@ import Path from 'path';
 import OpenAI from "openai";
 import { highlightAnomalyInImage } from "./helpers";
 import { Ffmpeg, ICamera, ImageClassifier, Imagesnap, LinuxImpulseRunner, ModelInformation, RunnerHelloHasAnomaly } from 'edge-impulse-linux';
+import { ips } from './get-ips';
 
 if (!process.env.OPENAI_API_KEY) {
     console.log('Missing OPENAI_API_KEY');
@@ -110,7 +111,7 @@ Reply with a very short response.`;
         let webserverPort = await startWebServer(model, camera, imageClassifier, port);
         console.log('');
         console.log('Want to see a feed of the camera and live classification in your browser? ' +
-            'Go to http://localhost:' + webserverPort);
+            'Go to http://' + (ips.length > 0 ? ips[0].address : 'localhost') + ':' + webserverPort);
         console.log('');
     }
     catch (ex) {

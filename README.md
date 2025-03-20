@@ -1,6 +1,6 @@
 # Model cascade with Edge Impulse (FOMO-AD -> LLM)
 
-This repository contains a demo using FOMO-AD (Edge Impulse's visual anomaly detection model) to find interesting parts of an image, then cascade to GPT4-o to do further analysis.
+This repository contains a demo using FOMO-AD (Edge Impulse's visual anomaly detection model) to find interesting parts of an image, then cascade to GPT-4o to do further analysis.
 
 ![Model cascade demo](images/demo.png)
 
